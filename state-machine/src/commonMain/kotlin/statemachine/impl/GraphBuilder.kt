@@ -1,0 +1,183 @@
+@file:Suppress("unused")
+
+package com.dhiachemingui.statemachine.impl
+
+import com.dhiachemingui.statemachine.*
+
+@DslMarker
+@InternalApi
+internal annotation class GraphBuilderMarker
+
+@DslMarker
+@InternalApi
+internal annotation class StateBuilderMarker
+
+@DslMarker
+@InternalApi
+internal annotation class EdgeBuilderMarker
+
+@Suppress("unused")
+@GraphBuilderMarker
+@InternalApi
+class GraphBuilder {
+    private var initial: State? = null
+    private val states: MutableList<StateBuilder> = mutableListOf()
+    private val transitions: MutableList<(MachineState) -> Unit> = mutableListOf()
+    private val stateChanges: MutableList<(State) -> Unit> = mutableListOf()
+
+    fun build(): Graph {
+        return Graph().apply {
+            val allNodes = mutableMapOf<State, Node>().apply {
+                states.forEach { putAll(it.allNodes()) }
+            }
+
+            states.forEach { sb ->
+                allNodes[sb.id]?.let { n ->
+                    sb.eventProducer?.let {
+                        n.decision = Decision { state: State, trigger: Event? -> sb.eventProducer!!(state, trigger) }
+                    }
+                    sb.enter?.let { n.onEnter = it }
+                    sb.exit?.let { n.onExit = it }
+                }
+            }
+            allNodes.values.forEach { add(it) }
+
+            initial?.let {
+                val node = allNodes[initial]
+                node?.let { initialState = MachineState.Dwelling(it) }
+            }
+
+            buildGraphEdges(allNodes)
+        }
+    }
+
+    private fun Graph.buildGraphEdges(allNodes: MutableMap<State, Node>) {
+        states.forEach { sb ->
+            val from = allNodes[sb.id]!!
+            sb.allowed.forEach { add(Edge(from, allNodes[it]!!)) }
+            sb.edges.forEach { add(it.value.build(from, allNodes)) }
+            sb.events.forEach { (eventClass, edgeBuilder) ->
+                with(edgeBuilder.build(from, allNodes)) {
+                    add(this)
+                    this.from.edgeTriggers[eventClass] = this
+                }
+            }
+        }
+    }
+
+    fun state(id: State, initBlock: StateBuilder.() -> Unit = {}) {
+        states.add(StateBuilder(id).apply(initBlock))
+    }
+
+    fun initialState(id: State) {
+        initial = id
+    }
+
+    fun onTransition(action: (MachineState) -> Unit) {
+        transitions.add(action)
+    }
+
+    fun onState(action: (State) -> Unit) {
+        stateChanges.add(action)
+    }
+}
+
+@StateBuilderMarker
+@InternalApi
+class StateBuilder(val id: State) {
+    internal val events: MutableMap<kotlin.reflect.KClass<out Event>, EdgeBuilder> = mutableMapOf()
+    internal val edges: MutableMap<State, EdgeBuilder> = mutableMapOf()
+    internal var enter: StateVisitor? = null
+    internal var exit: StateVisitor? = null
+    internal var allowed: MutableList<State> = mutableListOf()
+    internal var eventProducer: ((State, Event?) -> Event?)? = null
+
+    @PublishedApi
+    internal fun registerEvent(type: kotlin.reflect.KClass<out Event>, initBlock: EdgeBuilder.() -> Unit) {
+        events[type] = EdgeBuilder().apply(initBlock)
+    }
+
+    inline fun <reified T : Event> on(noinline initBlock: EdgeBuilder.() -> Unit) {
+        registerEvent(T::class, initBlock)
+    }
+
+    fun <T : Event> on(event: T, initBlock: EdgeBuilder.() -> Unit) {
+        events[event::class] = EdgeBuilder().apply(initBlock)
+    }
+
+    fun <T : State> onTransitionTo(state: T, initBlock: EdgeBuilder.() -> Unit) {
+        edges[state] = EdgeBuilder(state).apply(initBlock)
+    }
+
+    fun decision(producer: (State, Event?) -> Event?) {
+        this.eventProducer = producer
+    }
+
+    internal fun allNodes(): Map<State, Node> = mutableSetOf<Node>().apply {
+        add(Node(id))
+        addAll(allowed.map { Node(it) })
+        addAll(edges.map { Node(it.value.destination!!) })
+        addAll(events.map { Node(it.value.destination!!) })
+    }.associateBy { it.id }
+
+    fun onEnter(action: (State, Event?) -> Unit) {
+        enter = StateVisitor { state, trigger -> action(state, trigger) }
+    }
+
+    fun onExit(action: (State, Event?) -> Unit) {
+        exit = StateVisitor { state, trigger -> action(state, trigger) }
+    }
+
+    fun allows(vararg states: State) {
+        allowed.addAll(states)
+    }
+}
+
+@EdgeBuilderMarker
+@InternalApi
+class EdgeBuilder(var destination: State? = null) {
+    private var enter: EdgeVisitor? = null
+    private var exit: EdgeVisitor? = null
+    private var transitionAction: EdgeAction = { }
+
+    fun transitionTo(id: State, action: EdgeAction = { }) {
+        destination = id
+        transitionAction = action
+    }
+
+    fun execute(action: EdgeAction) {
+        transitionAction = action
+    }
+
+    fun onEnter(action: (Pair<State, State>) -> Unit) {
+        enter = EdgeVisitor { action(it) }
+    }
+
+    fun onExit(action: (Pair<State, State>) -> Unit) {
+        exit = EdgeVisitor { action(it) }
+    }
+
+    internal fun build(from: Node, allNodes: MutableMap<State, Node>): Edge {
+        return Edge(from, allNodes[destination!!]!!).apply {
+            enter?.let { onEnter = it }
+            exit?.let { onExit = it }
+            action = transitionAction
+        }
+    }
+}
+
+internal fun Graph.add(state: State) {
+    nodes.add(Node(state))
+}
+
+internal fun Graph.add(node: Node) {
+    nodes.add(node)
+}
+
+internal fun Graph.add(edge: Pair<State, State>) {
+    edges.add(Edge(Node(edge.first), Node(edge.second)))
+}
+
+internal fun Graph.add(edge: Edge) {
+    edges.add(edge)
+}
