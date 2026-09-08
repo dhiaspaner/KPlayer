@@ -69,7 +69,9 @@ import kotlin.time.Duration.Companion.milliseconds
  *   is undefined.
  * @param positionSyncIntervalMs how often `positionMs` is refreshed while playing.
  * @param retryPolicy consulted after every failure that has an action behind it.
- *   Defaults to [PlaybackRetryPolicy.None] — a silent reload is a product decision.
+ *   Defaults to [ActionAwareRetryPolicy] — its per-action, per-error rules are a
+ *   safer default than either retrying everything or [PlaybackRetryPolicy.None]'s
+ *   silent give-up.
  * @param reduceCustom see [PlaybackStateMachine.reduceCustom].
  * @param onLoad see [PlaybackStateMachine.onLoad].
  */
@@ -78,7 +80,7 @@ open class EngineMediaPlayer<S : PlayerState<S>>(
     initialState: S,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
     private val positionSyncIntervalMs: Long = 500L,
-    private val retryPolicy: PlaybackRetryPolicy = PlaybackRetryPolicy.None,
+    private val retryPolicy: PlaybackRetryPolicy = ActionAwareRetryPolicy(),
     reduceCustom: (S, PlaybackEvent) -> S? = { _, _ -> null },
     onLoad: (S) -> S = { it },
 ) : AbstractMediaPlayer<S>(
