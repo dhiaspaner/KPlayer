@@ -78,16 +78,16 @@ interface MediaEngine {
 }
 ```
 
-Engines extend `AbstractMediaEngine`, which owns `events` and names each fact, so the native
+Engines hold a `MediaEventReporter`, which owns `events` and names each fact, so the native
 callback reads as what the player observed rather than as an event constructor:
 
 ```kotlin
-reportPlaying(isPlaying)      // PlaybackStarted / PlaybackPaused
-reportBuffering(isBuffering)  // BufferingStarted / BufferingEnded — repeats are collapsed upstream
-reportReady(durationMs)       // 0 = unknown, e.g. live
-reportCompleted()
-reportError(error)            // a PlaybackError, or a String where that is all the stack gives
-report(event)                 // anything medium-specific, e.g. SubtitleCueChanged
+reporter.reportPlaying(isPlaying)      // PlaybackStarted / PlaybackPaused
+reporter.reportBuffering(isBuffering)  // BufferingStarted / BufferingEnded — repeats are collapsed upstream
+reporter.reportReady(durationMs)       // 0 = unknown, e.g. live
+reporter.reportCompleted()
+reporter.reportError(error)            // a PlaybackError, or a String where that is all the stack gives
+reporter.report(event)                 // anything medium-specific, e.g. SubtitleCueChanged
 ```
 
 `report…` never suspends and is safe from any thread — which is what lets the desktop engines report

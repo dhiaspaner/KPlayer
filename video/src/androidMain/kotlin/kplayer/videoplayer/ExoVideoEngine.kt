@@ -10,9 +10,10 @@ import androidx.media3.common.text.CueGroup
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
+import kotlinx.coroutines.flow.Flow
 import kplayer.core.event.PlaybackEvent
-import kplayer.core.player.AbstractMediaEngine
 import kplayer.core.player.MediaEngine
+import kplayer.core.player.MediaEventReporter
 import kplayer.core.player.toAndroidUri
 import kplayer.core.state.MediaSource
 import kplayer.core.state.NativeError
@@ -29,7 +30,10 @@ import kplayer.core.state.toPlaybackError
  * All the sequencing lives in `EngineMediaPlayer`; this file is only the translation
  * of media3's vocabulary into the one [MediaEngine.events] carries.
  */
-internal class ExoVideoEngine(context: Context) : AbstractMediaEngine() {
+internal class ExoVideoEngine(context: Context) : MediaEngine {
+
+    private val reporter = MediaEventReporter()
+    override val events: Flow<PlaybackEvent> = reporter.events
 
     val exoPlayer: ExoPlayer = ExoPlayer.Builder(context).build()
 
@@ -37,24 +41,24 @@ internal class ExoVideoEngine(context: Context) : AbstractMediaEngine() {
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             when {
-                isPlaying -> reportPlaying(true)
+                isPlaying -> reporter.reportPlaying(true)
                 exoPlayer.playbackState == Player.STATE_ENDED -> Unit
-                else -> reportPlaying(false)
+                else -> reporter.reportPlaying(false)
             }
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
-                Player.STATE_BUFFERING -> reportBuffering(true)
+                Player.STATE_BUFFERING -> reporter.reportBuffering(true)
 
                 Player.STATE_READY -> {
-                    reportBuffering(false)
-                    reportReady(exoPlayer.duration.takeIf { it != C.TIME_UNSET } ?: 0L)
+                    reporter.reportBuffering(false)
+                    reporter.reportReady(exoPlayer.duration.takeIf { it != C.TIME_UNSET } ?: 0L)
                 }
 
                 Player.STATE_ENDED -> {
-                    reportBuffering(false)
-                    reportCompleted()
+                    reporter.reportBuffering(false)
+                    reporter.reportCompleted()
                 }
 
                 Player.STATE_IDLE -> Unit
@@ -62,7 +66,7 @@ internal class ExoVideoEngine(context: Context) : AbstractMediaEngine() {
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            reportError(error.toPlaybackError())
+            reporter.reportError(error.toPlaybackError())
         }
 
         /**
@@ -79,7 +83,7 @@ internal class ExoVideoEngine(context: Context) : AbstractMediaEngine() {
                 .mapNotNull { it.text?.toString() }
                 .filter { it.isNotBlank() }
                 .joinToString("\n")
-            report(PlaybackEvent.SubtitleCueChanged(text.takeIf { it.isNotEmpty() }))
+            reporter.report(PlaybackEvent.SubtitleCueChanged(text.takeIf { it.isNotEmpty() }))
         }
     }
 

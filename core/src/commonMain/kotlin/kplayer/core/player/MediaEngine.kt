@@ -17,7 +17,7 @@ import kplayer.core.state.MediaSource
  *
  * ### Implementing one
  *
- * Extend [AbstractMediaEngine] rather than implementing this directly: it owns
+ * Hold a [MediaEventReporter] rather than building the event flow yourself: it owns
  * [events] and gives you the `report…` calls the rules below are written in terms
  * of. Two rules, and they are the ones a native player will break if you let it:
  *

@@ -87,7 +87,7 @@ Every backend in the library is built from these, so nothing engine-free is writ
 | `PlayerState<Self>` (in `kplayer.state`) | a `PlaybackState` the shared machine can `copyBase()` |
 | `PlaybackStateMachine<S>` | the status graph — one node per `PlaybackStatus` |
 | `AbstractMediaPlayer<S>` | machine + feedback flow + the `MediaPlayer` calls → `PlaybackAction` |
-| `MediaEngine` + `AbstractMediaEngine` | the seam a native player implements, and the `events` flow it reports through |
+| `MediaEngine` + `MediaEventReporter` | the seam a native player implements, and the `events` flow it reports through |
 | `EngineMediaPlayer<S>` | a complete player given only a `MediaEngine` |
 | `PlaybackError` (in `kplayer.state`) | what failed, described — the cause behind `PlaybackStatus.Error` |
 | `PlaybackRetryPolicy` | whether a failed `PlaybackAction` runs again |
@@ -113,10 +113,10 @@ a new source loads. Video uses both for subtitle cues; audio passes neither.
 
 `MediaEngine` implementations follow two rules: translate native quirks inside the engine rather than
 upstream, and never report state you were merely told to enter — wait for the native callback. Facts
-travel up one way only, as `MediaEngine.events`; `AbstractMediaEngine` owns that flow and gives an
-engine the `report…` calls that fill it, none of which suspend or care which thread they are on.
-`EngineMediaPlayer` is its only subscriber and subscribes in its constructor, because the flow does
-not replay.
+travel up one way only, as `MediaEngine.events`; `MediaEventReporter` owns that flow and gives an
+engine holding one the `report…` calls that fill it, none of which suspend or care which thread they
+are on. An engine exposes `events` by delegating to its reporter's. `EngineMediaPlayer` is its only
+subscriber and subscribes in its constructor, because the flow does not replay.
 
 ### Failure has one route out
 

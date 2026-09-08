@@ -1,8 +1,10 @@
 package kplayer.videoplayer
 
 import kotlinx.browser.document
-import kplayer.core.player.AbstractMediaEngine
+import kotlinx.coroutines.flow.Flow
+import kplayer.core.event.PlaybackEvent
 import kplayer.core.player.MediaEngine
+import kplayer.core.player.MediaEventReporter
 import kplayer.core.state.MediaSource
 import kplayer.core.state.NativeError
 import kplayer.core.state.toPlaybackError
@@ -20,7 +22,10 @@ import org.w3c.dom.events.Event
  * All the sequencing lives in `EngineMediaPlayer`; this file is only the translation
  * of media-element events into the vocabulary [MediaEngine.events] carries.
  */
-internal class HtmlVideoEngine : AbstractMediaEngine() {
+internal class HtmlVideoEngine : MediaEngine {
+
+    private val reporter = MediaEventReporter()
+    override val events: Flow<PlaybackEvent> = reporter.events
 
     val videoElement: HTMLVideoElement =
         (document.createElement("video") as HTMLVideoElement).apply {
@@ -41,26 +46,26 @@ internal class HtmlVideoEngine : AbstractMediaEngine() {
         return if (seconds.isNaN() || seconds.isInfinite()) 0L else (seconds * 1000.0).toLong()
     }
 
-    private val onPlaying: (Event) -> Unit = { reportPlaying(true) }
+    private val onPlaying: (Event) -> Unit = { reporter.reportPlaying(true) }
 
     private val onPause: (Event) -> Unit = {
         // `pause` also fires immediately before `ended`; reporting it would read as a
         // pause and step the player through Paused on its way to Completed.
-        if (!videoElement.ended) reportPlaying(false)
+        if (!videoElement.ended) reporter.reportPlaying(false)
     }
 
-    private val onWaiting: (Event) -> Unit = { reportBuffering(true) }
+    private val onWaiting: (Event) -> Unit = { reporter.reportBuffering(true) }
 
     private val onCanPlay: (Event) -> Unit = {
-        reportBuffering(false)
-        reportReady(durationMs())
+        reporter.reportBuffering(false)
+        reporter.reportReady(durationMs())
     }
 
-    private val onCanPlayThrough: (Event) -> Unit = { reportBuffering(false) }
+    private val onCanPlayThrough: (Event) -> Unit = { reporter.reportBuffering(false) }
 
     private val onEnded: (Event) -> Unit = {
-        reportBuffering(false)
-        reportCompleted()
+        reporter.reportBuffering(false)
+        reporter.reportCompleted()
     }
 
     private val onError: (Event) -> Unit = {
@@ -68,7 +73,7 @@ internal class HtmlVideoEngine : AbstractMediaEngine() {
         // most browsers and `org.w3c.dom.MediaError` does not even bind it. So the
         // code is carried through to :core rather than flattened into prose that
         // would classify as Unknown.
-        reportError(
+        reporter.reportError(
             NativeError.mediaElement(code = videoElement.error?.code?.toInt()).toPlaybackError()
         )
     }
@@ -109,7 +114,7 @@ internal class HtmlVideoEngine : AbstractMediaEngine() {
     /** Rejects when autoplay policy blocks playback — before any user gesture. */
     override fun play() {
         videoElement.play().catch { error ->
-            reportError(NativeError.rejected(error.toString()).toPlaybackError())
+            reporter.reportError(NativeError.rejected(error.toString()).toPlaybackError())
             null
         }
     }

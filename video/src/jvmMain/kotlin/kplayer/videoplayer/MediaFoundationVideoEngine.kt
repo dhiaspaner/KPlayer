@@ -1,9 +1,11 @@
 package kplayer.videoplayer
 
 import com.sun.jna.Pointer
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
-import kplayer.core.player.AbstractMediaEngine
+import kplayer.core.event.PlaybackEvent
 import kplayer.core.player.MediaEngine
+import kplayer.core.player.MediaEventReporter
 import kplayer.core.state.MediaSource
 import kplayer.core.state.PlaybackError
 import kplayer.videoplayer.frame.FrameBuffer
@@ -41,7 +43,10 @@ import java.util.concurrent.TimeUnit
  * translation of `IMFMediaEngine` state into the vocabulary [MediaEngine.events]
  * carries.
  */
-internal class MediaFoundationVideoEngine : AbstractMediaEngine(), VideoFrameSource, PixelSource {
+internal class MediaFoundationVideoEngine : MediaEngine, VideoFrameSource, PixelSource {
+
+    private val reporter = MediaEventReporter()
+    override val events: Flow<PlaybackEvent> = reporter.events
 
     private var engine: Pointer? = null
 
@@ -117,17 +122,17 @@ internal class MediaFoundationVideoEngine : AbstractMediaEngine(), VideoFrameSou
         val sink = MediaEngineNotify()
         val created = MediaFoundation.createMediaEngine(sink)
         if (created == null) {
-            reportError(PlaybackError.Unknown("Media Foundation could not create a media engine"))
+            reporter.reportError(PlaybackError.Unknown("Media Foundation could not create a media engine"))
             return
         }
         notify = sink
         engine = created
 
-        reportBuffering(true)
+        reporter.reportBuffering(true)
 
         if (!MediaFoundation.setSource(created, url) || !MediaFoundation.load(created)) {
-            reportBuffering(false)
-            reportError(PlaybackError.Source("Media Foundation could not open $url"))
+            reporter.reportBuffering(false)
+            reporter.reportError(PlaybackError.Source("Media Foundation could not open $url"))
             teardownEngine()
             return
         }
@@ -204,7 +209,7 @@ internal class MediaFoundationVideoEngine : AbstractMediaEngine(), VideoFrameSou
 
     /** As on macOS: an escaping exception would silently cancel every later tick. */
     private fun poll() {
-        runCatching { pollOnce() }.onFailure { reportError(PlaybackError.Unknown(it.message ?: it.toString())) }
+        runCatching { pollOnce() }.onFailure { reporter.reportError(PlaybackError.Unknown(it.message ?: it.toString())) }
     }
 
     private fun pollOnce() {
@@ -213,8 +218,8 @@ internal class MediaFoundationVideoEngine : AbstractMediaEngine(), VideoFrameSou
         val errorCode = MediaFoundation.errorCode(target)
         if (errorCode != MF_MEDIA_ENGINE_ERR_NOERROR) {
             stopPolling()
-            reportBuffering(false)
-            reportError(PlaybackError.Source("Media Foundation reported error code $errorCode"))
+            reporter.reportBuffering(false)
+            reporter.reportError(PlaybackError.Source("Media Foundation reported error code $errorCode"))
             return
         }
 
@@ -229,14 +234,14 @@ internal class MediaFoundationVideoEngine : AbstractMediaEngine(), VideoFrameSou
                 0L
             }
             reportedReady = true
-            reportBuffering(false)
-            reportReady(durationMs)
+            reporter.reportBuffering(false)
+            reporter.reportReady(durationMs)
         }
 
         if (!reportedCompleted && MediaFoundation.isEnded(target)) {
             reportedCompleted = true
             lastPlaying = false
-            reportCompleted()
+            reporter.reportCompleted()
             return
         }
 
@@ -246,11 +251,11 @@ internal class MediaFoundationVideoEngine : AbstractMediaEngine(), VideoFrameSou
         val buffering = playing && MediaFoundation.readyState(target) < MediaFoundation.READY_HAVE_FUTURE_DATA
         if (buffering != lastBuffering) {
             lastBuffering = buffering
-            reportBuffering(buffering)
+            reporter.reportBuffering(buffering)
         }
         if (playing != lastPlaying) {
             lastPlaying = playing
-            reportPlaying(playing)
+            reporter.reportPlaying(playing)
         }
     }
 

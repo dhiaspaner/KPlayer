@@ -1,9 +1,11 @@
 package kplayer.videoplayer
 
 import com.sun.jna.Pointer
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
-import kplayer.core.player.AbstractMediaEngine
+import kplayer.core.event.PlaybackEvent
 import kplayer.core.player.MediaEngine
+import kplayer.core.player.MediaEventReporter
 import kplayer.core.state.MediaSource
 import kplayer.core.state.NativeError
 import kplayer.core.state.PlaybackError
@@ -46,7 +48,10 @@ import java.util.concurrent.TimeUnit
  * All the sequencing lives in `EngineMediaPlayer`; this file is only the
  * translation of `AVPlayer` state into the vocabulary [MediaEngine.events] carries.
  */
-internal class AvFoundationVideoEngine : AbstractMediaEngine(), VideoFrameSource, PixelSource {
+internal class AvFoundationVideoEngine : MediaEngine, VideoFrameSource, PixelSource {
+
+    private val reporter = MediaEventReporter()
+    override val events: Flow<PlaybackEvent> = reporter.events
 
     /** The `AVPlayerItemVideoOutput` decoded frames are pulled from. */
     private var videoOutput: Pointer? = null
@@ -171,12 +176,12 @@ internal class AvFoundationVideoEngine : AbstractMediaEngine(), VideoFrameSource
         ObjC.autoreleasing {
             val newItem = ObjC.send(ObjC.cls("AVPlayerItem"), "playerItemWithURL:", source)
             if (newItem == null) {
-                reportError(PlaybackError.Source("AVFoundation could not open the source"))
+                reporter.reportError(PlaybackError.Source("AVFoundation could not open the source"))
                 return@autoreleasing
             }
             val newPlayer = ObjC.send(ObjC.cls("AVPlayer"), "playerWithPlayerItem:", newItem)
             if (newPlayer == null) {
-                reportError(PlaybackError.Unknown("AVFoundation could not create a player"))
+                reporter.reportError(PlaybackError.Unknown("AVFoundation could not create a player"))
                 return@autoreleasing
             }
             // Both factories return autoreleased objects and the pool drains on the
@@ -192,7 +197,7 @@ internal class AvFoundationVideoEngine : AbstractMediaEngine(), VideoFrameSource
         // Loading has begun and no frame is available yet — reported as buffering
         // rather than left silent, so the UI has something to show before onReady.
         lastBuffering = true
-        reportBuffering(true)
+        reporter.reportBuffering(true)
         startPolling()
     }
 
@@ -254,7 +259,7 @@ internal class AvFoundationVideoEngine : AbstractMediaEngine(), VideoFrameSource
 
             if (output == null) {
                 failures.report("AVFoundation could not create a video output")
-                reportError(PlaybackError.Unknown("AVFoundation could not create a video output"))
+                reporter.reportError(PlaybackError.Unknown("AVFoundation could not create a video output"))
                 return@autoreleasing
             }
 
@@ -353,7 +358,7 @@ internal class AvFoundationVideoEngine : AbstractMediaEngine(), VideoFrameSource
         runCatching { synchronized(nativeLock) { pollOnce() } }.onFailure {
             // A throw from a poll tick is a JVM exception like any other, so it
             // goes through the same classifier the action boundary uses.
-            reportError(it.toPlaybackError())
+            reporter.reportError(it.toPlaybackError())
         }
     }
 
@@ -364,8 +369,8 @@ internal class AvFoundationVideoEngine : AbstractMediaEngine(), VideoFrameSource
         when (ObjC.sendLong(currentItem, "status")) {
             STATUS_FAILED -> {
                 stopPolling()
-                reportBuffering(false)
-                reportError(itemError(currentItem))
+                reporter.reportBuffering(false)
+                reporter.reportError(itemError(currentItem))
                 return
             }
 
@@ -373,10 +378,10 @@ internal class AvFoundationVideoEngine : AbstractMediaEngine(), VideoFrameSource
                 reportedReady = true
                 val duration = ObjC.sendTime(currentItem, "duration").toMillisOrNull()
                 lastBuffering = false
-                reportBuffering(false)
+                reporter.reportBuffering(false)
                 // 0, not the null we got: a live stream has no duration, and that
                 // is exactly what onReady's contract says 0 means.
-                reportReady(duration ?: 0L)
+                reporter.reportReady(duration ?: 0L)
             }
 
             else -> return // still unknown; nothing to report yet
@@ -395,9 +400,9 @@ internal class AvFoundationVideoEngine : AbstractMediaEngine(), VideoFrameSource
             lastPlaying = false
             if (lastBuffering) {
                 lastBuffering = false
-                reportBuffering(false)
+                reporter.reportBuffering(false)
             }
-            reportCompleted()
+            reporter.reportCompleted()
             return
         }
 
@@ -408,13 +413,13 @@ internal class AvFoundationVideoEngine : AbstractMediaEngine(), VideoFrameSource
             ObjC.sendBoolean(currentItem, "isPlaybackBufferEmpty")
         if (buffering != lastBuffering) {
             lastBuffering = buffering
-            reportBuffering(buffering)
+            reporter.reportBuffering(buffering)
         }
 
         val playing = timeControl == TIME_CONTROL_PLAYING
         if (playing != lastPlaying) {
             lastPlaying = playing
-            reportPlaying(playing)
+            reporter.reportPlaying(playing)
         }
     }
 

@@ -4,11 +4,12 @@ import io.github.kotlin.fibonacci.videoplayer.PlayerObserver
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.CValue
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.flow.Flow
 import kplayer.BufferingObserver
 import kplayer.RateObserver
 import kplayer.core.event.PlaybackEvent
-import kplayer.core.player.AbstractMediaEngine
 import kplayer.core.player.MediaEngine
+import kplayer.core.player.MediaEventReporter
 import kplayer.core.player.toIosUrl
 import kplayer.core.state.MediaSource
 import kplayer.core.state.NativeError
@@ -59,7 +60,10 @@ import platform.darwin.dispatch_get_main_queue
  * carries.
  */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-internal class AvVideoEngine : AbstractMediaEngine() {
+internal class AvVideoEngine : MediaEngine {
+
+    private val reporter = MediaEventReporter()
+    override val events: Flow<PlaybackEvent> = reporter.events
 
     val avPlayer: AVPlayer = AVPlayer()
 
@@ -80,7 +84,7 @@ internal class AvVideoEngine : AbstractMediaEngine() {
     var testResourceLoaderDelegate: AVAssetResourceLoaderDelegateProtocol? = null
 
     private val rateObserver = RateObserver { rate ->
-        reportPlaying(rate > 0f)
+        reporter.reportPlaying(rate > 0f)
     }
 
     private val itemStatusObserver = PlayerObserver { status ->
@@ -91,14 +95,14 @@ internal class AvVideoEngine : AbstractMediaEngine() {
                 val durationMs =
                     if (seconds.isNaN() || seconds.isInfinite()) 0L
                     else (seconds * 1000.0).toLong()
-                reportReady(durationMs)
+                reporter.reportReady(durationMs)
             }
 
             AVPlayerItemStatusFailed -> {
                 val item = observedItem ?: avPlayer.currentItem
                 val error = NativeError.avError(item?.error).toPlaybackError()
                 NSLog("AvVideoEngine: AVPlayerItem failed: ${error.message}")
-                reportError(error)
+                reporter.reportError(error)
             }
 
             else -> Unit
@@ -106,7 +110,7 @@ internal class AvVideoEngine : AbstractMediaEngine() {
     }
 
     private val bufferingObserver = BufferingObserver { likelyToKeepUp ->
-        reportBuffering(!likelyToKeepUp)
+        reporter.reportBuffering(!likelyToKeepUp)
     }
 
     // ── Subtitle routing ──────────────────────────────────────────────────────
@@ -114,7 +118,7 @@ internal class AvVideoEngine : AbstractMediaEngine() {
     private var legibleOutput: AVPlayerItemLegibleOutput? = null
 
     private val legibleDelegate = LegibleOutputDelegate { text ->
-        report(PlaybackEvent.SubtitleCueChanged(text))
+        reporter.report(PlaybackEvent.SubtitleCueChanged(text))
     }
 
     /**
@@ -153,7 +157,7 @@ internal class AvVideoEngine : AbstractMediaEngine() {
         legibleOutput = null
         // Whatever was last routed to Compose is about to be drawn natively (or not
         // at all); either way the state must not keep claiming it is showing.
-        report(PlaybackEvent.SubtitleCueChanged(null))
+        reporter.report(PlaybackEvent.SubtitleCueChanged(null))
     }
 
     // ── MediaEngine ───────────────────────────────────────────────────────────
@@ -205,7 +209,7 @@ internal class AvVideoEngine : AbstractMediaEngine() {
             `object` = item,
             queue = null,
         ) { _ ->
-            reportCompleted()
+            reporter.reportCompleted()
         }
 
         return true

@@ -1,7 +1,9 @@
 package kplayer.audioplayer
 
-import kplayer.core.player.AbstractMediaEngine
+import kotlinx.coroutines.flow.Flow
+import kplayer.core.event.PlaybackEvent
 import kplayer.core.player.MediaEngine
+import kplayer.core.player.MediaEventReporter
 import kplayer.core.state.MediaSource
 import kplayer.core.state.PlaybackError
 
@@ -19,7 +21,10 @@ import kplayer.core.state.PlaybackError
  */
 internal class FakeMediaEngine(
     private val rejectSources: Set<MediaSource> = emptySet(),
-) : AbstractMediaEngine() {
+) : MediaEngine {
+
+    private val reporter = MediaEventReporter()
+    override val events: Flow<PlaybackEvent> = reporter.events
 
     /** Every call made on this engine, in order, as a readable name. */
     val calls = mutableListOf<String>()
@@ -71,17 +76,17 @@ internal class FakeMediaEngine(
     // its native callbacks: same events, same route, chosen by the test instead of
     // by ExoPlayer or AVFoundation.
 
-    fun emitPlaying(isPlaying: Boolean) = reportPlaying(isPlaying)
+    fun emitPlaying(isPlaying: Boolean) = reporter.reportPlaying(isPlaying)
 
-    fun emitBuffering(isBuffering: Boolean) = reportBuffering(isBuffering)
+    fun emitBuffering(isBuffering: Boolean) = reporter.reportBuffering(isBuffering)
 
-    fun emitReady(durationMs: Long) = reportReady(durationMs)
+    fun emitReady(durationMs: Long) = reporter.reportReady(durationMs)
 
-    fun emitCompleted() = reportCompleted()
+    fun emitCompleted() = reporter.reportCompleted()
 
-    fun emitError(error: PlaybackError) = reportError(error)
+    fun emitError(error: PlaybackError) = reporter.reportError(error)
 
-    fun emitError(message: String) = reportError(message)
+    fun emitError(message: String) = reporter.reportError(message)
 
     // ── MediaEngine ───────────────────────────────────────────────────────────
 

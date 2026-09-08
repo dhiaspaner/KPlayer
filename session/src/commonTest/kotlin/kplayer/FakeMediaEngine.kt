@@ -1,8 +1,9 @@
 package kplayer
 
+import kotlinx.coroutines.flow.Flow
 import kplayer.core.event.PlaybackEvent
-import kplayer.core.player.AbstractMediaEngine
 import kplayer.core.player.MediaEngine
+import kplayer.core.player.MediaEventReporter
 import kplayer.core.state.MediaSource
 import kplayer.core.state.PlaybackError
 
@@ -19,7 +20,10 @@ import kplayer.core.state.PlaybackError
  * exists because that one is `internal` to `:audio`, and because the question here
  * is only whether facts survive the trip up to the manager.
  */
-class FakeMediaEngine : AbstractMediaEngine() {
+class FakeMediaEngine : MediaEngine {
+
+    private val reporter = MediaEventReporter()
+    override val events: Flow<PlaybackEvent> = reporter.events
 
     /** Every call made on this engine, in order, as a readable name. */
     val calls = mutableListOf<String>()
@@ -29,12 +33,12 @@ class FakeMediaEngine : AbstractMediaEngine() {
 
     // ── The native player's part, played by the test ──────────────────────────
 
-    fun emitPlaying(isPlaying: Boolean) = reportPlaying(isPlaying)
-    fun emitBuffering(isBuffering: Boolean) = reportBuffering(isBuffering)
-    fun emitReady(durationMs: Long) = reportReady(durationMs)
-    fun emitCompleted() = reportCompleted()
-    fun emitError(error: PlaybackError) = reportError(error)
-    fun emitCustom(event: PlaybackEvent) = report(event)
+    fun emitPlaying(isPlaying: Boolean) = reporter.reportPlaying(isPlaying)
+    fun emitBuffering(isBuffering: Boolean) = reporter.reportBuffering(isBuffering)
+    fun emitReady(durationMs: Long) = reporter.reportReady(durationMs)
+    fun emitCompleted() = reporter.reportCompleted()
+    fun emitError(error: PlaybackError) = reporter.reportError(error)
+    fun emitCustom(event: PlaybackEvent) = reporter.report(event)
 
     // ── MediaEngine ───────────────────────────────────────────────────────────
 

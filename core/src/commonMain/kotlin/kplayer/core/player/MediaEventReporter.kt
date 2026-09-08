@@ -39,18 +39,18 @@ import kplayer.core.state.PlaybackError
  *    subscribes sit in the queue instead of vanishing, so an engine that faults on
  *    its very first native call is still heard.
  */
-abstract class AbstractMediaEngine : MediaEngine {
+class MediaEventReporter {
 
     private val intake = Channel<PlaybackEvent>(Channel.UNLIMITED)
 
-    final override val events: Flow<PlaybackEvent> = intake.receiveAsFlow()
+    val events: Flow<PlaybackEvent> = intake.receiveAsFlow()
 
     /**
      * Report a fact the shared vocabulary does not name — video's
      * [PlaybackEvent.SubtitleCueChanged] is the only one today. It lands in the
      * state machine, where the medium's `reduceCustom` hook interprets it.
      */
-    protected fun report(event: PlaybackEvent) {
+    fun report(event: PlaybackEvent) {
         // Cannot fail: an UNLIMITED channel has no capacity to run out of, and the
         // channel is closed only when the engine is done for good.
         intake.trySend(event)
@@ -63,15 +63,16 @@ abstract class AbstractMediaEngine : MediaEngine {
      * the media — that is [reportCompleted]'s job, and reporting both makes the
      * player visibly flash through `Paused` on its way to `Completed`.
      */
-    protected fun reportPlaying(isPlaying: Boolean) = report(
+    fun reportPlaying(isPlaying: Boolean) = report(
         if (isPlaying) PlaybackEvent.PlaybackStarted else PlaybackEvent.PlaybackPaused
     )
 
     /**
-     * The engine started or stopped waiting for data. Safe to call repeatedly with
-     * the same value; [EngineMediaPlayer] collapses runs into one started/ended pair.
+     * The owning engine started or stopped waiting for data. Safe to call repeatedly
+     * with the same value; [EngineMediaPlayer] collapses runs into one started/ended
+     * pair.
      */
-    protected fun reportBuffering(isBuffering: Boolean) = report(
+    fun reportBuffering(isBuffering: Boolean) = report(
         if (isBuffering) PlaybackEvent.BufferingStarted else PlaybackEvent.BufferingEnded
     )
 
@@ -79,18 +80,19 @@ abstract class AbstractMediaEngine : MediaEngine {
      * The source is loaded and playable. [durationMs] is `0` when unknown, as for a
      * live stream.
      */
-    protected fun reportReady(durationMs: Long) = report(PlaybackEvent.Ready(durationMs))
+    fun reportReady(durationMs: Long) = report(PlaybackEvent.Ready(durationMs))
 
     /** Played through to the end. */
-    protected fun reportCompleted() = report(PlaybackEvent.PlaybackCompleted)
+    fun reportCompleted() = report(PlaybackEvent.PlaybackCompleted)
 
     /**
-     * The engine faulted. Classify where the platform's own error type is still in
-     * reach — `PlaybackException.errorCode`, an `NSError` domain — because upstream
-     * nothing can: [PlaybackRetryPolicy] decides what to retry from this alone.
+     * The owning engine faulted. Classify where the platform's own error type is
+     * still in reach — `PlaybackException.errorCode`, an `NSError` domain — because
+     * upstream nothing can: [PlaybackRetryPolicy] decides what to retry from this
+     * alone.
      */
-    protected fun reportError(error: PlaybackError) = report(PlaybackEvent.Failure(error))
+    fun reportError(error: PlaybackError) = report(PlaybackEvent.Failure(error))
 
     /** For an engine whose native stack offers nothing better than a string. */
-    protected fun reportError(message: String) = report(PlaybackEvent.Failure(message))
+    fun reportError(message: String) = report(PlaybackEvent.Failure(message))
 }

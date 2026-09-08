@@ -1,7 +1,9 @@
 package kplayer.audioplayer
 
-import kplayer.core.player.AbstractMediaEngine
+import kotlinx.coroutines.flow.Flow
+import kplayer.core.event.PlaybackEvent
 import kplayer.core.player.MediaEngine
+import kplayer.core.player.MediaEventReporter
 import kplayer.core.state.MediaSource
 import kplayer.core.state.NativeError
 import kplayer.core.state.toPlaybackError
@@ -30,7 +32,10 @@ import java.util.concurrent.TimeUnit
  * All the sequencing lives in `EngineMediaPlayer`; this file is only the translation
  * of GStreamer bus messages into the vocabulary [MediaEngine.events] carries.
  */
-internal class GStreamerAudioEngine : AbstractMediaEngine() {
+internal class GStreamerAudioEngine : MediaEngine {
+
+    private val reporter = MediaEventReporter()
+    override val events: Flow<PlaybackEvent> = reporter.events
 
     private val playBin: PlayBin = PlayBin("kplayer-audio")
 
@@ -38,17 +43,17 @@ internal class GStreamerAudioEngine : AbstractMediaEngine() {
     private var reportedReady = false
 
     private val eosListener = Bus.EOS {
-        reportBuffering(false)
-        reportCompleted()
+        reporter.reportBuffering(false)
+        reporter.reportCompleted()
     }
 
     private val errorListener = Bus.ERROR { _: GstObject, code: Int, message: String ->
-        reportError(NativeError.gstreamer(code, message).toPlaybackError())
+        reporter.reportError(NativeError.gstreamer(code, message).toPlaybackError())
     }
 
     private val bufferingListener = Bus.BUFFERING { _: GstObject, percent: Int ->
         // playbin reports a 0..100 fill level; anything short of full is a stall.
-        reportBuffering(percent < 100)
+        reporter.reportBuffering(percent < 100)
     }
 
     /**
@@ -61,10 +66,10 @@ internal class GStreamerAudioEngine : AbstractMediaEngine() {
             State.PAUSED, State.PLAYING -> {
                 if (!reportedReady) {
                     reportedReady = true
-                    reportBuffering(false)
-                    reportReady(queryDurationMs())
+                    reporter.reportBuffering(false)
+                    reporter.reportReady(queryDurationMs())
                 }
-                reportPlaying(current == State.PLAYING)
+                reporter.reportPlaying(current == State.PLAYING)
             }
 
             else -> Unit
@@ -109,7 +114,7 @@ internal class GStreamerAudioEngine : AbstractMediaEngine() {
      * first frames without playing, which is exactly "prepare".
      */
     override fun prepare() {
-        reportBuffering(true)
+        reporter.reportBuffering(true)
         playBin.state = State.PAUSED
     }
 
