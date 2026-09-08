@@ -9,9 +9,11 @@ import androidx.media3.common.Player
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
+import kotlinx.coroutines.flow.Flow
 import kplayer.core.audio.AudioSessionMode
-import kplayer.core.player.AbstractMediaEngine
+import kplayer.core.event.PlaybackEvent
 import kplayer.core.player.MediaEngine
+import kplayer.core.player.MediaEventReporter
 import kplayer.core.player.toAndroidUri
 import kplayer.core.state.MediaSource
 import kplayer.core.state.NativeError
@@ -31,7 +33,10 @@ import kplayer.core.state.toPlaybackError
 internal class ExoAudioEngine(
     context: Context,
     audioSessionMode: AudioSessionMode,
-) : AbstractMediaEngine() {
+) : MediaEngine {
+
+    private val reporter = MediaEventReporter()
+    override val events: Flow<PlaybackEvent> = reporter.events
 
     // handleAudioFocus = false because AudioSession (see KMediaManager) owns focus
     // arbitration. The attributes themselves are still applied so the output
@@ -46,29 +51,29 @@ internal class ExoAudioEngine(
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             when {
-                isPlaying -> reportPlaying(true)
+                isPlaying -> reporter.reportPlaying(true)
                 // At end-of-media ExoPlayer also flips isPlaying to false. Passing
                 // that on would read as a pause and make the player visibly step
                 // through Paused before Completed, so it is swallowed here and
                 // STATE_ENDED reports the completion instead. playbackState is
                 // already STATE_ENDED at this point (same Player.Events batch).
                 exoPlayer.playbackState == Player.STATE_ENDED -> Unit
-                else -> reportPlaying(false)
+                else -> reporter.reportPlaying(false)
             }
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
-                Player.STATE_BUFFERING -> reportBuffering(true)
+                Player.STATE_BUFFERING -> reporter.reportBuffering(true)
 
                 Player.STATE_READY -> {
-                    reportBuffering(false)
-                    reportReady(exoPlayer.duration.takeIf { it != C.TIME_UNSET } ?: 0L)
+                    reporter.reportBuffering(false)
+                    reporter.reportReady(exoPlayer.duration.takeIf { it != C.TIME_UNSET } ?: 0L)
                 }
 
                 Player.STATE_ENDED -> {
-                    reportBuffering(false)
-                    reportCompleted()
+                    reporter.reportBuffering(false)
+                    reporter.reportCompleted()
                 }
 
                 Player.STATE_IDLE -> Unit
@@ -76,7 +81,7 @@ internal class ExoAudioEngine(
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            reportError(error.toPlaybackError())
+            reporter.reportError(error.toPlaybackError())
         }
     }
 

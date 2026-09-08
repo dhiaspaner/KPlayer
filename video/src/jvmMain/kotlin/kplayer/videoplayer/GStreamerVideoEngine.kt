@@ -1,8 +1,10 @@
 package kplayer.videoplayer
 
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
-import kplayer.core.player.AbstractMediaEngine
+import kplayer.core.event.PlaybackEvent
 import kplayer.core.player.MediaEngine
+import kplayer.core.player.MediaEventReporter
 import kplayer.core.state.MediaSource
 import kplayer.core.state.NativeError
 import kplayer.core.state.toPlaybackError
@@ -47,7 +49,10 @@ import java.util.concurrent.TimeUnit
  * bindings only, and `DesktopVideoEngines.isAvailable` probes for them so a
  * missing install is a message rather than an `UnsatisfiedLinkError`.
  */
-internal class GStreamerVideoEngine : AbstractMediaEngine(), VideoFrameSource {
+internal class GStreamerVideoEngine : MediaEngine, VideoFrameSource {
+
+    private val reporter = MediaEventReporter()
+    override val events: Flow<PlaybackEvent> = reporter.events
 
     private val playBin: PlayBin = PlayBin("kplayer-video")
 
@@ -132,16 +137,16 @@ internal class GStreamerVideoEngine : AbstractMediaEngine(), VideoFrameSource {
     }
 
     private val eosListener = Bus.EOS {
-        reportBuffering(false)
-        reportCompleted()
+        reporter.reportBuffering(false)
+        reporter.reportCompleted()
     }
 
     private val errorListener = Bus.ERROR { _: GstObject, code: Int, message: String ->
-        reportError(NativeError.gstreamer(code, message).toPlaybackError())
+        reporter.reportError(NativeError.gstreamer(code, message).toPlaybackError())
     }
 
     private val bufferingListener = Bus.BUFFERING { _: GstObject, percent: Int ->
-        reportBuffering(percent < 100)
+        reporter.reportBuffering(percent < 100)
     }
 
     /**
@@ -154,10 +159,10 @@ internal class GStreamerVideoEngine : AbstractMediaEngine(), VideoFrameSource {
             State.PAUSED, State.PLAYING -> {
                 if (!reportedReady) {
                     reportedReady = true
-                    reportBuffering(false)
-                    reportReady(queryDurationMs())
+                    reporter.reportBuffering(false)
+                    reporter.reportReady(queryDurationMs())
                 }
-                reportPlaying(current == State.PLAYING)
+                reporter.reportPlaying(current == State.PLAYING)
             }
 
             else -> Unit
@@ -198,7 +203,7 @@ internal class GStreamerVideoEngine : AbstractMediaEngine(), VideoFrameSource {
         // PAUSED, not PLAYING: pre-rolls the pipeline so duration becomes
         // queryable and the first frame is decoded, without starting playback that
         // EngineMediaPlayer has not asked for.
-        reportBuffering(true)
+        reporter.reportBuffering(true)
         playBin.state = State.PAUSED
     }
 

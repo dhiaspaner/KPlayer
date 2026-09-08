@@ -1,8 +1,10 @@
 package kplayer.audioplayer
 
 import kotlinx.browser.document
-import kplayer.core.player.AbstractMediaEngine
+import kotlinx.coroutines.flow.Flow
+import kplayer.core.event.PlaybackEvent
 import kplayer.core.player.MediaEngine
+import kplayer.core.player.MediaEventReporter
 import kplayer.core.state.MediaSource
 import kplayer.core.state.NativeError
 import kplayer.core.state.toPlaybackError
@@ -22,7 +24,10 @@ import org.w3c.dom.events.Event
  * translation of media-element events into the vocabulary [MediaEngine.events]
  * carries.
  */
-internal class HtmlAudioEngine : AbstractMediaEngine() {
+internal class HtmlAudioEngine : MediaEngine {
+
+    private val reporter = MediaEventReporter()
+    override val events: Flow<PlaybackEvent> = reporter.events
 
     val audioElement: HTMLAudioElement =
         (document.createElement("audio") as HTMLAudioElement).apply {
@@ -40,27 +45,27 @@ internal class HtmlAudioEngine : AbstractMediaEngine() {
 
     // ── Element events → engine events ────────────────────────────────────────
 
-    private val onPlaying: (Event) -> Unit = { reportPlaying(true) }
+    private val onPlaying: (Event) -> Unit = { reporter.reportPlaying(true) }
 
     private val onPause: (Event) -> Unit = {
         // `pause` also fires immediately before `ended`. Reporting it would read as
         // a pause and make the player step through Paused on its way to Completed,
         // so it is swallowed here exactly as ExoPlayer's STATE_ENDED case is.
-        if (!audioElement.ended) reportPlaying(false)
+        if (!audioElement.ended) reporter.reportPlaying(false)
     }
 
-    private val onWaiting: (Event) -> Unit = { reportBuffering(true) }
+    private val onWaiting: (Event) -> Unit = { reporter.reportBuffering(true) }
 
     private val onCanPlay: (Event) -> Unit = {
-        reportBuffering(false)
-        reportReady(durationMs())
+        reporter.reportBuffering(false)
+        reporter.reportReady(durationMs())
     }
 
-    private val onPlayingBuffered: (Event) -> Unit = { reportBuffering(false) }
+    private val onPlayingBuffered: (Event) -> Unit = { reporter.reportBuffering(false) }
 
     private val onEnded: (Event) -> Unit = {
-        reportBuffering(false)
-        reportCompleted()
+        reporter.reportBuffering(false)
+        reporter.reportCompleted()
     }
 
     private val onError: (Event) -> Unit = {
@@ -68,7 +73,7 @@ internal class HtmlAudioEngine : AbstractMediaEngine() {
         // most browsers and `org.w3c.dom.MediaError` does not even bind it. So the
         // code is carried through to :core rather than flattened into prose that
         // would classify as Unknown.
-        reportError(
+        reporter.reportError(
             NativeError.mediaElement(code = audioElement.error?.code?.toInt()).toPlaybackError()
         )
     }
@@ -115,7 +120,7 @@ internal class HtmlAudioEngine : AbstractMediaEngine() {
     override fun play() {
         audioElement.play()
             .catch { error ->
-                reportError(NativeError.rejected(error.toString()).toPlaybackError())
+                reporter.reportError(NativeError.rejected(error.toString()).toPlaybackError())
                 null
             }
 

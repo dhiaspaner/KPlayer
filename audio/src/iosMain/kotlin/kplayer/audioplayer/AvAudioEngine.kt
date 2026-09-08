@@ -2,8 +2,10 @@ package kplayer.audioplayer
 
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
-import kplayer.core.player.AbstractMediaEngine
+import kotlinx.coroutines.flow.Flow
+import kplayer.core.event.PlaybackEvent
 import kplayer.core.player.MediaEngine
+import kplayer.core.player.MediaEventReporter
 import kplayer.core.player.toIosUrl
 import kplayer.core.state.MediaSource
 import kplayer.core.state.NativeError
@@ -47,7 +49,10 @@ import platform.darwin.NSObjectProtocol
  * [MediaEngine.events] carries.
  */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-internal class AvAudioEngine : AbstractMediaEngine() {
+internal class AvAudioEngine : MediaEngine {
+
+    private val reporter = MediaEventReporter()
+    override val events: Flow<PlaybackEvent> = reporter.events
 
     val avPlayer: AVPlayer = AVPlayer()
 
@@ -62,7 +67,7 @@ internal class AvAudioEngine : AbstractMediaEngine() {
     private var playbackSpeed: Float = 1f
 
     private val rateObserver = AudioRateObserver { rate ->
-        reportPlaying(rate > 0f)
+        reporter.reportPlaying(rate > 0f)
     }
 
     private val itemStatusObserver = AudioItemStatusObserver { status ->
@@ -73,14 +78,14 @@ internal class AvAudioEngine : AbstractMediaEngine() {
                 val durationMs =
                     if (seconds.isNaN() || seconds.isInfinite()) 0L
                     else (seconds * 1000.0).toLong()
-                reportReady(durationMs)
+                reporter.reportReady(durationMs)
             }
 
             AVPlayerItemStatusFailed -> {
                 val item = observedItem ?: avPlayer.currentItem
                 val error = NativeError.avError(item?.error).toPlaybackError()
                 NSLog("AvAudioEngine: AVPlayerItem failed: ${error.message}")
-                reportError(error)
+                reporter.reportError(error)
             }
 
             else -> Unit
@@ -88,7 +93,7 @@ internal class AvAudioEngine : AbstractMediaEngine() {
     }
 
     private val bufferingObserver = AudioBufferingObserver { likelyToKeepUp ->
-        reportBuffering(!likelyToKeepUp)
+        reporter.reportBuffering(!likelyToKeepUp)
     }
 
     init {
@@ -125,7 +130,7 @@ internal class AvAudioEngine : AbstractMediaEngine() {
             `object` = item,
             queue = null,
         ) { _ ->
-            reportCompleted()
+            reporter.reportCompleted()
         }
 
         return true

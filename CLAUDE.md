@@ -214,12 +214,13 @@ auto-play, volume clamping, and one shared position-sync loop that polls
 `addPeriodicTimeObserverForInterval`).
 
 **Facts come up as a flow, not a listener.** An engine reports through `MediaEngine.events`, and
-`AbstractMediaEngine` (in `:core`'s `kplayer.player`) owns that flow — extend it and call
-`reportPlaying` / `reportBuffering` / `reportReady` / `reportCompleted` / `reportError`, or `report`
-for a medium-specific event like `SubtitleCueChanged`. None of them suspend or care about the calling
-thread, which is what lets the desktop engines report from a poll thread. `EngineMediaPlayer` is the
-only subscriber and subscribes **undispatched in its constructor**: the flow does not replay, so a
-subscription merely scheduled on the action scope would drop whatever the engine reported first.
+`MediaEventReporter` (in `:core`'s `kplayer.player`) owns that flow — an engine holds one as a field
+and calls `reportPlaying` / `reportBuffering` / `reportReady` / `reportCompleted` / `reportError`, or
+`report` for a medium-specific event like `SubtitleCueChanged`, exposing `events` itself by
+delegating to the reporter's. None of them suspend or care about the calling thread, which is what
+lets the desktop engines report from a poll thread. `EngineMediaPlayer` is the only subscriber and
+subscribes **undispatched in its constructor**: the flow does not replay, so a subscription merely
+scheduled on the action scope would drop whatever the engine reported first.
 
 **Failures have one route out.** `EngineMediaPlayer.execute()` is the single error-handling
 boundary: `runAction` wraps the dispatch `when`, describes anything thrown through the `errorMapper`
