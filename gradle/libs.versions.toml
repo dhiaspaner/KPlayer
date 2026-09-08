@@ -25,6 +25,7 @@ gstreamer = "1.4.0"
 # 0.12.0 is built with Kotlin 2.2.20 and stays on kotlinx-io 0.8.0.
 filekit = "0.12.0"
 jna = "5.19.1"
+dokka = "2.2.0"
 
 [libraries]
 androidx-lifecycle-process = { module = "androidx.lifecycle:lifecycle-process", version.ref = "lifecycleProcess" }
@@ -86,6 +87,7 @@ compose = { id = "org.jetbrains.compose", version.ref = "compose" }
 # Compose compiler plugin (required for @Composable usage)
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 vanniktech-mavenPublish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktechMavenPublish" }
+dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
 
 
 [bundles]

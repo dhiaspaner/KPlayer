@@ -8,10 +8,18 @@ plugins {
     alias(libs.plugins.compose)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.vanniktech.mavenPublish)
+    alias(libs.plugins.dokka)
 }
 
 group = "com.dhiachemingui.kplayer"
 version = "0.0.0"
+
+// Picked up automatically by mavenPublishing's default javadocJar detection
+// (MavenPublishBaseExtension.defaultJavaDocOption) since this module never
+// calls configure() itself.
+dokka {
+    moduleName.set("kplayer-ui")
+}
 
 kotlin {
 
